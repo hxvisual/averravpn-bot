@@ -1,0 +1,66 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Ensure remote directory exists
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+        run: |
+          ssh -o StrictHostKeyChecking=yes ${SSH_USER}@${SSH_HOST} "mkdir -p ${DEPLOY_DIR}"
+
+      - name: Upload project via tar over SSH
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+        run: |
+          tar --exclude='.git' --exclude='.github' -czf - . | ssh ${SSH_USER}@${SSH_HOST} "tar -xzf - -C ${DEPLOY_DIR}"
+
+      - name: Install dependencies and restart service
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+        run: |
+          ssh ${SSH_USER}@${SSH_HOST} << 'EOF'
+            set -e
+            cd "${DEPLOY_DIR}"
+            if [ ! -d ".venv" ]; then
+              python3 -m venv .venv
+            fi
+            . .venv/bin/activate
+            pip install --upgrade pip
+            if [ -f requirements.txt ]; then
+              pip install -r requirements.txt
+            fi
+            if [ -f /etc/systemd/system/averra-bot.service ]; then
+              sudo -n systemctl daemon-reload || sudo systemctl daemon-reload
+              sudo -n systemctl restart averra-bot || sudo systemctl restart averra-bot
+              sudo -n systemctl status averra-bot --no-pager | cat || true
+            else
+              sudo bash install.sh
+            fi
+          EOF
