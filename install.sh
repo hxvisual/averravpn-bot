@@ -18,7 +18,7 @@ cd /opt/averra-bot
 
 # 2.5) Клонирование репозитория при необходимости (если каталог пуст и не git-репозиторий)
 if [ ! -d ".git" ] && [ -z "$(ls -A)" ]; then
-  git clone git@github.com:hxvisual/averravpn-bot.git .
+  git clone https://github.com/hxvisual/averravpn-bot.git .
 fi
 
 # 3) Виртуальное окружение и зависимости (код должен быть уже в /opt/averra-bot)
