@@ -162,9 +162,18 @@ async def run_backup(callback: CallbackQuery):
         return
     from utils.backup import run_marzban_backup
     await callback.answer(MESSAGES["backup_started"], show_alert=True)
-    ok, output = await run_marzban_backup()
+    ok, output, archive_path = await run_marzban_backup()
     if ok:
-        await callback.message.answer(MESSAGES["backup_success"]) 
+        # Отправим архив админу, если найден
+        if archive_path:
+            try:
+                from aiogram.types import FSInputFile
+                doc = FSInputFile(archive_path)
+                await callback.message.answer_document(document=doc, caption=MESSAGES["backup_success"])
+            except Exception:
+                await callback.message.answer(MESSAGES["backup_success"]) 
+        else:
+            await callback.message.answer(MESSAGES["backup_success"]) 
     else:
         await callback.message.answer(f"{MESSAGES['backup_failed']}\n<code>{output[:1000]}</code>")
 
