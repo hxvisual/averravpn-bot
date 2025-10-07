@@ -232,10 +232,12 @@ PROMO_CODES_FILE = os.getenv('PROMO_CODES_FILE', 'promocodes.json')
 MESSAGES.update({
     "promo_create_prompt": (
         "🎟️ <b>Создание промокода</b>\n"
-        "Выберите тариф, для которого нужен промокод (1 активация):"
+        "━━━━━━━━━━━━\n\n"
+        "Выберите тариф:"
     ),
     "promo_created": (
-        "✅ Промокод создан\n\n"
+        "✅ <b>Промокод создан</b>\n\n"
+        "━━━━━━━━━━━━\n\n"
         "Тариф: <b>{plan_name}</b>\n"
         "Код: <code>{code}</code>"
     ),
@@ -243,7 +245,8 @@ MESSAGES.update({
     "promo_invalid": "❌ Неверный промокод",
     "promo_used": "⚠️ Этот промокод уже использован",
     "promo_applied": (
-        "🎉 Промокод применён!\n"
+        "🎉 <b>Промокод применён!</b>\n"
+        "━━━━━━━━━━━━\n\n"
         "Тариф: <b>{plan_name}</b>\n"
         "Подписка действует до: <b>{expire_str}</b>"
     ),
