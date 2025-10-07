@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from services.marzban_service import MarzbanService
 from keyboards.inline import get_subscription_menu, get_plans_menu
-from config import MESSAGES, MARZBAN_BASE_URL, MARZBAN_USERNAME, MARZBAN_PASSWORD
+from config import MESSAGES, MARZBAN_BASE_URL, MARZBAN_USERNAME, MARZBAN_PASSWORD, BUTTONS
 from utils.helpers import (
     is_subscription_active,
     bytes_to_gigabytes,
@@ -36,34 +36,31 @@ async def my_subscription_handler(callback: CallbackQuery):
         total_gb = "∞" if not user_info.get("data_limit") else f"{bytes_to_gigabytes(user_info['data_limit'])} ГБ"
         display_username = get_display_username(user_info.get("username"))
         
-        # Определяем текст действия
+        # Выбираем единый шаблон по состоянию
         if is_active:
-            action_text = "⚠️ Перед подключением откройте кнопку \"Инструкция\" ниже и следуйте шагам."
+            template = MESSAGES["subscription_active"]
         else:
-            action_text = "Подписка истекла. Продлите её для продолжения использования."
-        
-        # Формируем текст с прямой ссылкой (если активна)
-        link_block = ""
-        if is_active and user_info.get("subscription_url"):
-            link_block = (
-                "\n\n🔗 <b>Ссылка для подключения</b>\n"
-                f"<code>{user_info['subscription_url']}</code>"
-            )
+            template = MESSAGES["subscription_expired"]
 
-        text = (
-            "📊 <b>Информация о подписке</b>\n"
-            "━━━━━━━━━━━━\n\n"
-            f"👤 Пользователь: <b>{display_username}</b>\n"
-            f"⏳ Истекает: <b>{expire_date}</b>\n"
-            f"📈 Использовано: <b>{used_gb} ГБ</b> / <b>{total_gb}</b>"
-            f"{link_block}\n\n"
-            f"{action_text}"
+        text = template.format(
+            display_username=display_username,
+            expire_date=expire_date,
+            used_gb=used_gb,
+            total_gb=total_gb,
+            subscription_url=user_info.get("subscription_url", "")
         )
         
-        await callback.message.edit_text(
-            text=text,
-            reply_markup=get_subscription_menu(has_subscription=True)
-        )
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        kb = get_subscription_menu(has_subscription=True)
+        # Добавим кнопку ввода промокода
+        try:
+            # Extend existing inline keyboard with promo button before Back
+            rows = list(kb.inline_keyboard)
+            rows.insert(0, [InlineKeyboardButton(text=BUTTONS["enter_promo"], callback_data="enter_promo")])
+            kb = InlineKeyboardMarkup(inline_keyboard=rows)
+        except Exception:
+            pass
+        await callback.message.edit_text(text=text, reply_markup=kb)
     
     await callback.answer()
 
@@ -72,16 +69,19 @@ async def my_subscription_handler(callback: CallbackQuery):
 async def show_plans(callback: CallbackQuery):
     """Показать тарифные планы"""
     await callback.message.edit_text(
-        text=(
-            "📦 <b>Выберите тарифный план</b>\n"
-            "━━━━━━━━━━━━\n\n"
-            "✅ Высокая скорость\n"
-            "✅ Неограниченные устройства\n"
-            "✅ Поддержка 24/7\n\n"
-            "🌍 <b>Страны в подписке</b>: \n🇫🇮 Финляндия\n🇷🇺 Россия\n\n‼Обход глушилок работает только на Т2, МТС"
-        ),
+        text=MESSAGES["no_subscription"],
         reply_markup=get_plans_menu()
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "enter_promo")
+async def enter_promo(callback: CallbackQuery):
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=BUTTONS["back"], callback_data="my_subscription")]
+    ])
+    await callback.message.edit_text(MESSAGES.get("promo_prompt", "Введите промокод:"), reply_markup=kb)
     await callback.answer()
 
 

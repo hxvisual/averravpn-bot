@@ -13,7 +13,11 @@ from config import (
     MARZBAN_BASE_URL,
     MARZBAN_USERNAME,
     MARZBAN_PASSWORD,
+    BUTTONS,
+    REFERRAL,
 )
+from utils.maintenance import is_maintenance_enabled
+from config import ADMIN_IDS, ADMIN_IDS_STR
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -26,9 +30,17 @@ payment_service = PaymentService(YOOMONEY_WALLET_ID, YOOMONEY_NOTIFICATION_SECRE
 async def process_plan_selection(callback: CallbackQuery):
     """Обработка выбора тарифного плана"""
     plan_key = callback.data.split("_", 1)[1]
+    # Блокируем оплату в режиме обслуживания для НЕ-админов
+    if is_maintenance_enabled() and callback.from_user:
+        uid = getattr(callback.from_user, 'id', None)
+        if uid is not None and (uid not in ADMIN_IDS and str(uid) not in ADMIN_IDS_STR):
+            await callback.answer(MESSAGES["maintenance_active"], show_alert=True)
+            return
+        await callback.answer(MESSAGES["maintenance_active"], show_alert=True)
+        return
     
     if plan_key not in SUBSCRIPTION_PLANS:
-        await callback.answer("❌ Неверный тариф", show_alert=True)
+        await callback.answer(MESSAGES["invalid_plan_alert"], show_alert=True)
         return
     
     plan = SUBSCRIPTION_PLANS[plan_key]
@@ -60,6 +72,7 @@ async def process_plan_selection(callback: CallbackQuery):
 # Webhook для обработки уведомлений от YooMoney (отдельный endpoint)
 async def process_payment_notification(data: dict, bot: Bot | None = None):
     """Обработка уведомления об оплате"""
+    # Уведомления об оплате принимаем, даже если обслуживание включено
     if not payment_service.verify_notification(data):
         return False
     
@@ -100,20 +113,44 @@ async def process_payment_notification(data: dict, bot: Bot | None = None):
                 except Exception:
                     pass
 
-                status_line = "🎉 <b>Подписка активирована!</b>" 
-                text = (
-                    "✅ <b>Оплата получена</b>\n"
-                    "━━━━━━━━━━━━\n\n"
-                    f"{status_line}\n"
-                    f"⏳ Действует до: <b>{expire_str}</b>\n\n"
-                    "Откройте кнопку \"Моя подписка\" ниже, чтобы посмотреть статус и получить ссылку."
+                status_line = MESSAGES["payment_activated_title"]
+                text = MESSAGES["payment_received"].format(
+                    status_line=status_line,
+                    expire_str=expire_str,
                 )
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="📊 Моя подписка", callback_data="my_subscription")]
+                    [InlineKeyboardButton(text=BUTTONS["my_subscription"], callback_data="my_subscription")]
                 ])
                 await bot.send_message(chat_id=telegram_id, text=text, reply_markup=keyboard)
             except Exception as notify_err:
                 logger.error("Failed to notify user %s: %s", telegram_id, notify_err)
+        
+        # Реферальный бонус: если у платящего пользователя есть реферер (в note), начисляем 30% от купленных дней
+        try:
+            user_info_after = await marzban_service.get_user_info(telegram_id)
+            note = (user_info_after or {}).get("note") or ""
+            ref_prefix = REFERRAL.get("note_prefix", "ref:")
+            if isinstance(note, str) and note.startswith(ref_prefix):
+                ref_id_str = note.removeprefix(ref_prefix)
+                if ref_id_str.isdigit():
+                    referrer_id = int(ref_id_str)
+                    purchased_days = int(plan.get("days", 0))
+                    bonus_days = max(1, (purchased_days * 3) // 10)
+                    bonus_res = await marzban_service.extend_by_days(referrer_id, bonus_days)
+                    if bot is not None:
+                        try:
+                            from utils.helpers import format_ts_to_str
+                            expire_str = "—"
+                            exp_ts = bonus_res.get("expire")
+                            if exp_ts:
+                                expire_str = format_ts_to_str(exp_ts)
+                            bonus_title = MESSAGES["ref_bonus_title"]
+                            bonus_body = MESSAGES["ref_bonus_body"].format(bonus_days=bonus_days, expire_str=expire_str)
+                            await bot.send_message(chat_id=referrer_id, text=f"{bonus_title}\n\n{bonus_body}")
+                        except Exception as ref_notify_err:
+                            logger.error("Failed to notify referrer %s: %s", referrer_id, ref_notify_err)
+        except Exception as ref_err:
+            logger.error("Referral bonus error for payer %s: %s", telegram_id, ref_err)
         return True
     except Exception as e:
         logger.error(f"Failed to process payment for user {telegram_id}: {e}")

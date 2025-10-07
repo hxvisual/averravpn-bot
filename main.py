@@ -5,6 +5,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from config import BOT_TOKEN, WEBHOOK_HOST, WEBHOOK_PORT
+from utils.maintenance import MaintenanceMiddleware
 from handlers import start, subscription, payment
 from webhook import create_app
 import uvicorn
@@ -19,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 async def run_bot(bot: Bot) -> None:
     dp = Dispatcher()
+    # Global middleware blocks non-admins when maintenance is enabled
+    dp.update.outer_middleware(MaintenanceMiddleware())
     dp.include_router(start.router)
     dp.include_router(subscription.router)
     dp.include_router(payment.router)
