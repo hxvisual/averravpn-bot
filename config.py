@@ -67,18 +67,18 @@ SUBSCRIPTION_PLANS: Dict[str, Dict] = {
     "1_month": {
         "name": "1 месяц",
         "days": 30,
-        "price": 149,
+        "price": 249,
     },
     "3_months": {
         "name": "3 месяца",
         "days": 90,
-        "price": 299,
+        "price": 649,
         
     },
     "6_months": {
         "name": "6 месяцев",
         "days": 180,
-        "price": 449,
+        "price": 1099,
         
     }
 }
