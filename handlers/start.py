@@ -1,6 +1,9 @@
+import asyncio
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
 from keyboards.inline import get_main_menu
 from config import MESSAGES, MARZBAN_BASE_URL, MARZBAN_USERNAME, MARZBAN_PASSWORD, REFERRAL, BOT_USERNAME, BUTTONS, ADMIN_IDS
 from services.marzban_service import MarzbanService
@@ -9,6 +12,22 @@ from utils.promo import consume_promo
 
 router = Router()
 marzban_service = MarzbanService(MARZBAN_BASE_URL, MARZBAN_USERNAME, MARZBAN_PASSWORD)
+
+
+class BroadcastStates(StatesGroup):
+    waiting_for_message_all = State()
+    waiting_for_user_id = State()
+    waiting_for_message_single = State()
+
+
+def _is_admin(user_id: int) -> bool:
+    return user_id in ADMIN_IDS
+
+
+def _is_cancel(message: Message) -> bool:
+    if not message.text:
+        return False
+    return message.text.strip().lower() in {"отмена", "cancel"}
 
 
 @router.message(CommandStart())
@@ -128,6 +147,7 @@ async def admin_panel(callback: CallbackQuery):
         [InlineKeyboardButton(text=toggle_text, callback_data="maintenance_toggle")],
         [InlineKeyboardButton(text=BUTTONS["backup"], callback_data="run_backup")],
         [InlineKeyboardButton(text=BUTTONS["create_promo"], callback_data="promo_create")],
+        [InlineKeyboardButton(text=BUTTONS["broadcast"], callback_data="broadcast_menu")],
         [InlineKeyboardButton(text=BUTTONS["back"], callback_data="back_to_main")],
     ])
     await callback.message.edit_text(text=MESSAGES["admin_panel"], reply_markup=kb)
@@ -149,10 +169,149 @@ async def toggle_maintenance(callback: CallbackQuery):
         [InlineKeyboardButton(text=toggle_text, callback_data="maintenance_toggle")],
         [InlineKeyboardButton(text=BUTTONS["backup"], callback_data="run_backup")],
         [InlineKeyboardButton(text=BUTTONS["create_promo"], callback_data="promo_create")],
+        [InlineKeyboardButton(text=BUTTONS["broadcast"], callback_data="broadcast_menu")],
         [InlineKeyboardButton(text=BUTTONS["back"], callback_data="back_to_main")],
     ])
     await callback.message.edit_text(text=MESSAGES["admin_panel"], reply_markup=kb)
     await callback.answer(MESSAGES["maintenance_enabled"] if enable else MESSAGES["maintenance_disabled"])
+
+
+@router.callback_query(F.data == "broadcast_menu")
+async def broadcast_menu(callback: CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    await state.clear()
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=BUTTONS["broadcast_all"], callback_data="broadcast_all")],
+        [InlineKeyboardButton(text=BUTTONS["broadcast_one"], callback_data="broadcast_one")],
+        [InlineKeyboardButton(text=BUTTONS["back"], callback_data="admin_panel")],
+    ])
+    await callback.message.edit_text(text=MESSAGES["broadcast_menu"], reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "broadcast_all")
+async def broadcast_all_prompt(callback: CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    await state.clear()
+    await state.set_state(BroadcastStates.waiting_for_message_all)
+    await callback.message.answer(MESSAGES["broadcast_all_prompt"])
+    await callback.answer()
+
+
+@router.callback_query(F.data == "broadcast_one")
+async def broadcast_one_prompt(callback: CallbackQuery, state: FSMContext):
+    if not _is_admin(callback.from_user.id):
+        await callback.answer()
+        return
+    await state.clear()
+    await state.set_state(BroadcastStates.waiting_for_user_id)
+    await callback.message.answer(MESSAGES["broadcast_user_prompt"])
+    await callback.answer()
+
+
+@router.message(BroadcastStates.waiting_for_user_id)
+async def broadcast_user_id_received(message: Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        await state.clear()
+        return
+    if _is_cancel(message):
+        await state.clear()
+        await message.answer(MESSAGES["broadcast_cancelled"])
+        return
+    text = (message.text or "").strip()
+    if not text.isdigit():
+        await message.answer(MESSAGES["broadcast_invalid_user"])
+        return
+    target_id = int(text)
+    await state.update_data(target_id=target_id)
+    await state.set_state(BroadcastStates.waiting_for_message_single)
+    await message.answer(MESSAGES["broadcast_enter_message"])
+
+
+@router.message(BroadcastStates.waiting_for_message_all)
+async def broadcast_message_all(message: Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        await state.clear()
+        return
+    if _is_cancel(message):
+        await state.clear()
+        await message.answer(MESSAGES["broadcast_cancelled"])
+        return
+
+    await message.answer(MESSAGES["broadcast_started"])
+
+    try:
+        users = await marzban_service.list_all_users()
+    except Exception:
+        users = []
+
+    if not users:
+        await message.answer(MESSAGES["broadcast_no_recipients"])
+        await state.clear()
+        return
+
+    sent = 0
+    total = 0
+    seen_ids: set[int] = set()
+    for user in users:
+        try:
+            username = (user.get("username") or "").strip()
+            if not username.startswith("tg_"):
+                continue
+            tg_id_str = username.removeprefix("tg_")
+            if not tg_id_str.isdigit():
+                continue
+            chat_id = int(tg_id_str)
+            if chat_id in seen_ids:
+                continue
+            seen_ids.add(chat_id)
+            total += 1
+            try:
+                await message.copy_to(chat_id=chat_id)
+                sent += 1
+            except Exception:
+                continue
+            await asyncio.sleep(0.05)
+        except Exception:
+            continue
+
+    if total == 0:
+        await message.answer(MESSAGES["broadcast_no_recipients"])
+    else:
+        await message.answer(MESSAGES["broadcast_done_all"].format(sent=sent, total=total))
+    await state.clear()
+
+
+@router.message(BroadcastStates.waiting_for_message_single)
+async def broadcast_message_single(message: Message, state: FSMContext):
+    if not _is_admin(message.from_user.id):
+        await state.clear()
+        return
+    if _is_cancel(message):
+        await state.clear()
+        await message.answer(MESSAGES["broadcast_cancelled"])
+        return
+
+    data = await state.get_data()
+    target_id = data.get("target_id")
+    if not isinstance(target_id, int):
+        await state.clear()
+        await message.answer(MESSAGES["broadcast_cancelled"])
+        return
+
+    try:
+        await message.copy_to(chat_id=target_id)
+    except Exception:
+        await message.answer(MESSAGES["broadcast_failed_one"].format(user_id=target_id))
+    else:
+        await message.answer(MESSAGES["broadcast_done_one"].format(user_id=target_id))
+    finally:
+        await state.clear()
 
 
 @router.callback_query(F.data == "run_backup")

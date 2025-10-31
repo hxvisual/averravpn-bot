@@ -44,6 +44,8 @@ def get_subscription_menu(has_subscription: bool = False) -> InlineKeyboardMarku
 def get_plans_menu() -> InlineKeyboardMarkup:
     """Меню выбора тарифов"""
     buttons = []
+    # Переносим кнопку ввода промокода в экран покупки/продления
+    buttons.append([InlineKeyboardButton(text=BUTTONS["enter_promo"], callback_data="enter_promo")])
     
     for plan_key, plan_info in SUBSCRIPTION_PLANS.items():
         text = MESSAGES["plan_button"].format(name=plan_info['name'], price=plan_info['price'])

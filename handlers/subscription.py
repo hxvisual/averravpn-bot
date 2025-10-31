@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from services.marzban_service import MarzbanService
 from keyboards.inline import get_subscription_menu, get_plans_menu
-from config import MESSAGES, MARZBAN_BASE_URL, MARZBAN_USERNAME, MARZBAN_PASSWORD, BUTTONS
+from config import MESSAGES, MARZBAN_BASE_URL, MARZBAN_USERNAME, MARZBAN_PASSWORD
 from utils.helpers import (
     is_subscription_active,
     bytes_to_gigabytes,
@@ -31,7 +31,9 @@ async def my_subscription_handler(callback: CallbackQuery):
         )
     else:
         # Есть подписка
-        expire_date = format_ts_to_str(int(user_info.get("expire", 0) or 0))
+        # Показ бесконечного срока, если дата не установлена в Marzban
+        _raw_exp = user_info.get("expire")
+        expire_date = "∞" if not _raw_exp else format_ts_to_str(int(_raw_exp))
         used_gb = bytes_to_gigabytes(user_info.get("used_traffic", 0))
         total_gb = "∞" if not user_info.get("data_limit") else f"{bytes_to_gigabytes(user_info['data_limit'])} ГБ"
         display_username = get_display_username(user_info.get("username"))
@@ -50,16 +52,7 @@ async def my_subscription_handler(callback: CallbackQuery):
             subscription_url=user_info.get("subscription_url", "")
         )
         
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        kb = get_subscription_menu(has_subscription=True)
-        # Добавим кнопку ввода промокода
-        try:
-            # Extend existing inline keyboard with promo button before Back
-            rows = list(kb.inline_keyboard)
-            rows.insert(0, [InlineKeyboardButton(text=BUTTONS["enter_promo"], callback_data="enter_promo")])
-            kb = InlineKeyboardMarkup(inline_keyboard=rows)
-        except Exception:
-            pass
+        kb = get_subscription_menu(has_subscription=is_active)
         await callback.message.edit_text(text=text, reply_markup=kb)
     
     await callback.answer()
@@ -77,12 +70,8 @@ async def show_plans(callback: CallbackQuery):
 
 @router.callback_query(F.data == "enter_promo")
 async def enter_promo(callback: CallbackQuery):
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=BUTTONS["back"], callback_data="my_subscription")]
-    ])
-    await callback.message.edit_text(MESSAGES.get("promo_prompt", "Введите промокод:"), reply_markup=kb)
-    await callback.answer()
+    prompt = MESSAGES.get("promo_prompt", "Введите промокод одним сообщением")
+    await callback.answer(prompt, show_alert=True)
 
 
 # Ручка получения ссылки больше не нужна — ссылка показывается прямо в профиле

@@ -201,4 +201,40 @@ class MarzbanService:
         """Закрытие API клиента"""
         await self.api.close()
 
+    async def list_all_users(self) -> list[Dict[str, Any]]:
+        """Вернуть плоский список всех пользователей из Marzban.
+
+        Каждый элемент содержит ключи: username, status, expire, data_limit, used_traffic, subscription_url, note.
+        """
+        try:
+            token = await self.get_token()
+            offset = 0
+            limit = 200
+            result: list[Dict[str, Any]] = []
+            while True:
+                resp = await self.api.get_users(token=token, offset=offset, limit=limit)
+                users = getattr(resp, "users", [])
+                if not users:
+                    break
+                for u in users:
+                    try:
+                        result.append({
+                            "username": getattr(u, "username", None),
+                            "status": getattr(u, "status", None),
+                            "expire": getattr(u, "expire", None),
+                            "data_limit": getattr(u, "data_limit", None),
+                            "used_traffic": getattr(u, "used_traffic", None),
+                            "subscription_url": getattr(u, "subscription_url", None),
+                            "note": getattr(u, "note", None),
+                        })
+                    except Exception:
+                        continue
+                offset += limit
+                if len(users) < limit:
+                    break
+            return result
+        except Exception as e:
+            logger.error(f"Failed to list users: {e}")
+            return []
+
 
