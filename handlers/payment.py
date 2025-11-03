@@ -1,7 +1,7 @@
 import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from services.marzban_service import MarzbanService
 from services.payment_service import PaymentService
 from aiogram import Bot
@@ -89,16 +89,31 @@ async def process_payment_notification(data: dict, bot: Bot | None = None):
     
     plan = SUBSCRIPTION_PLANS[plan_key]
 
-    paid_amount_raw = data.get("amount")
-    if paid_amount_raw is None:
-        logger.warning("Payment rejected: missing amount for label %s", data.get("label"))
+    def _to_decimal(value: object) -> Decimal | None:
+        if value is None:
+            return None
+        try:
+            if isinstance(value, (int, float, Decimal)):
+                normalized = Decimal(str(value))
+            elif isinstance(value, str):
+                normalized = Decimal(value.replace(" ", "").replace(",", "."))
+            else:
+                return None
+            return normalized.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        except (InvalidOperation, TypeError, ValueError):
+            return None
+
+    paid_amount = _to_decimal(data.get("amount"))
+    if paid_amount is None:
+        paid_amount = _to_decimal(data.get("withdraw_amount"))
+
+    if paid_amount is None:
+        logger.warning("Payment rejected: missing or invalid amount for label %s", data.get("label"))
         return False
 
-    try:
-        paid_amount = Decimal(str(paid_amount_raw))
-        expected_amount = Decimal(str(plan.get("price")))
-    except (InvalidOperation, TypeError):
-        logger.warning("Payment rejected: invalid amount %s for label %s", paid_amount_raw, data.get("label"))
+    expected_amount = _to_decimal(plan.get("price"))
+    if expected_amount is None:
+        logger.error("Configured price for plan %s is invalid", plan_key)
         return False
 
     if paid_amount != expected_amount:
