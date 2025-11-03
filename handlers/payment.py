@@ -103,27 +103,37 @@ async def process_payment_notification(data: dict, bot: Bot | None = None):
         except (InvalidOperation, TypeError, ValueError):
             return None
 
+    withdraw_amount = _to_decimal(data.get("withdraw_amount"))
     paid_amount = _to_decimal(data.get("amount"))
-    if paid_amount is None:
-        paid_amount = _to_decimal(data.get("withdraw_amount"))
-
-    if paid_amount is None:
-        logger.warning("Payment rejected: missing or invalid amount for label %s", data.get("label"))
-        return False
-
     expected_amount = _to_decimal(plan.get("price"))
+
     if expected_amount is None:
         logger.error("Configured price for plan %s is invalid", plan_key)
         return False
 
-    if paid_amount != expected_amount:
-        logger.warning(
-            "Payment rejected: amount mismatch for user %s plan %s (paid=%s expected=%s)",
-            telegram_id,
-            plan_key,
-            paid_amount,
-            expected_amount,
-        )
+    if withdraw_amount is not None:
+        if withdraw_amount != expected_amount:
+            logger.warning(
+                "Payment rejected: withdraw amount mismatch for user %s plan %s (withdraw=%s expected=%s, net=%s)",
+                telegram_id,
+                plan_key,
+                withdraw_amount,
+                expected_amount,
+                paid_amount,
+            )
+            return False
+    elif paid_amount is not None:
+        if paid_amount != expected_amount:
+            logger.warning(
+                "Payment rejected: amount mismatch for user %s plan %s (paid=%s expected=%s)",
+                telegram_id,
+                plan_key,
+                paid_amount,
+                expected_amount,
+            )
+            return False
+    else:
+        logger.warning("Payment rejected: missing amount fields for label %s", data.get("label"))
         return False
     
     try:
