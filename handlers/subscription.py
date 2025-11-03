@@ -23,36 +23,36 @@ async def my_subscription_handler(callback: CallbackQuery):
     # Определяем активность
     is_active = is_subscription_active(user_info)
 
-    if not user_info or not is_active:
-        # Нет подписки (трактуем выключенный/истёкший профиль как отсутствие подписки)
+    if not user_info:
+        # Пользователь ещё ни разу не оформлял подписку
         await callback.message.edit_text(
             text=MESSAGES["no_subscription"],
             reply_markup=get_plans_menu()
         )
+    elif not is_active:
+        # Профиль есть, но подписка истекла — показываем предупреждение, без моментального перехода к оплате
+        await callback.message.edit_text(
+            text=MESSAGES["subscription_expired"],
+            reply_markup=get_subscription_menu(has_subscription=False)
+        )
     else:
-        # Есть подписка
+        # Есть активная подписка
         # Показ бесконечного срока, если дата не установлена в Marzban
         _raw_exp = user_info.get("expire")
         expire_date = "∞" if not _raw_exp else format_ts_to_str(int(_raw_exp))
         used_gb = bytes_to_gigabytes(user_info.get("used_traffic", 0))
         total_gb = "∞" if not user_info.get("data_limit") else f"{bytes_to_gigabytes(user_info['data_limit'])} ГБ"
         display_username = get_display_username(user_info.get("username"))
-        
-        # Выбираем единый шаблон по состоянию
-        if is_active:
-            template = MESSAGES["subscription_active"]
-        else:
-            template = MESSAGES["subscription_expired"]
 
-        text = template.format(
+        text = MESSAGES["subscription_active"].format(
             display_username=display_username,
             expire_date=expire_date,
             used_gb=used_gb,
             total_gb=total_gb,
             subscription_url=user_info.get("subscription_url", "")
         )
-        
-        kb = get_subscription_menu(has_subscription=is_active)
+
+        kb = get_subscription_menu(has_subscription=True)
         await callback.message.edit_text(text=text, reply_markup=kb)
     
     await callback.answer()

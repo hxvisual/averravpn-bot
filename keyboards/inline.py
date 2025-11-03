@@ -1,5 +1,5 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from config import SUBSCRIPTION_PLANS, INSTRUCTION_URL, SUPPORT_URL, NEWS_URL, BUTTONS, MESSAGES
+from config import SUBSCRIPTION_PLANS, INSTRUCTION_URL, SUPPORT_URL, NEWS_URL, USER_AGREEMENT_URL, BUTTONS, MESSAGES
 
 
 def get_main_menu(has_active: bool = False, is_admin: bool = False) -> InlineKeyboardMarkup:
@@ -20,6 +20,8 @@ def get_main_menu(has_active: bool = False, is_admin: bool = False) -> InlineKey
     # Добавим кнопку админки для админов по отдельному вызову — здесь оставляем публичное меню
     if support_news_row:
         rows.append(support_news_row)
+    if USER_AGREEMENT_URL:
+        rows.append([InlineKeyboardButton(text=BUTTONS["user_agreement"], url=USER_AGREEMENT_URL)])
     if is_admin:
         rows.append([InlineKeyboardButton(text=BUTTONS["admin_panel"], callback_data="admin_panel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

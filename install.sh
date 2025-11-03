@@ -5,7 +5,7 @@ set -euo pipefail
 DOMAIN="bot.hexsad.ru"
 EMAIL="dimatarasov825@gmail.com"   # укажите реальную почту; иначе будет использован --register-unsafely-without-email
 
-# 0) Переменные окружения приложения (укажите значения здесь либо экспортируйте перед запуском)
+# 0) Переменные окружения приложения (берутся из заранее подготовленного .env)
 BOT_TOKEN="${BOT_TOKEN:-}"
 MARZBAN_BASE_URL="${MARZBAN_BASE_URL:-}"
 MARZBAN_USERNAME="${MARZBAN_USERNAME:-}"
@@ -16,7 +16,15 @@ INSTRUCTION_URL="${INSTRUCTION_URL:-}"
 SUPPORT_URL="${SUPPORT_URL:-}"
 BOT_USERNAME="${BOT_USERNAME:-}"
 NEWS_URL="${NEWS_URL:-}"
+USER_AGREEMENT_URL="${USER_AGREEMENT_URL:-}"
 ADMIN_IDS="${ADMIN_IDS:-}"
+
+SCRIPT_DIR="$(pwd)"
+ENV_FILE="${SCRIPT_DIR}/.env"
+if [ ! -f "$ENV_FILE" ]; then
+  echo "Файл .env не найден в ${SCRIPT_DIR}. Создайте его заранее и повторите запуск." >&2
+  exit 1
+fi
 
 require_var() {
   local name="$1"
@@ -24,23 +32,6 @@ require_var() {
   if [ -z "$value" ]; then
     echo "Ошибка: переменная $name не задана. Укажите её в install.sh или через окружение и запустите скрипт снова." >&2
     exit 1
-  fi
-}
-
-# Запрос значения у пользователя, если переменная не задана и терминал интерактивный
-prompt_for_var() {
-  local var_name="$1"
-  local ask_text="$2"
-  local is_secret="${3:-0}"
-  local current_value="${!var_name:-}"
-  if [ -z "$current_value" ] && [ -t 0 ]; then
-    if [ "$is_secret" = "1" ]; then
-      read -r -s -p "$ask_text: " input_val || true
-      echo
-    else
-      read -r -p "$ask_text: " input_val || true
-    fi
-    eval "$var_name=\"${input_val}\""
   fi
 }
 
@@ -60,43 +51,23 @@ if [ ! -d ".git" ] && [ -z "$(ls -A)" ]; then
   git clone https://github.com/hxvisual/averravpn-bot.git .
 fi
 
-# 2.6) Проверка обязательных переменных и создание .env
-# Запрос значений, если они не заданы в окружении (интерактивно)
-prompt_for_var "BOT_TOKEN" "Введите BOT_TOKEN (токен бота)" 1
-prompt_for_var "MARZBAN_BASE_URL" "Введите MARZBAN_BASE_URL (например, https://vpn.example.com)"
-prompt_for_var "MARZBAN_USERNAME" "Введите MARZBAN_USERNAME"
-prompt_for_var "MARZBAN_PASSWORD" "Введите MARZBAN_PASSWORD" 1
-prompt_for_var "YOOMONEY_WALLET_ID" "Введите YOOMONEY_WALLET_ID"
-prompt_for_var "YOOMONEY_NOTIFICATION_SECRET" "Введите YOOMONEY_NOTIFICATION_SECRET" 1
-prompt_for_var "INSTRUCTION_URL" "Введите INSTRUCTION_URL (ссылка на инструкцию)"
-prompt_for_var "SUPPORT_URL" "Введите SUPPORT_URL (ссылка на поддержку)"
-prompt_for_var "BOT_USERNAME" "Введите BOT_USERNAME (username бота без @)"
-prompt_for_var "NEWS_URL" "Введите NEWS_URL (ссылка на новостной канал)"
-prompt_for_var "ADMIN_IDS" "Введите ADMIN_IDS (через запятую)"
+# 2.6) Готовый .env обязателен
+if [ ! -f .env ]; then
+  cp "$ENV_FILE" .env
+fi
 
-require_var "BOT_TOKEN" "$BOT_TOKEN"
-require_var "MARZBAN_BASE_URL" "$MARZBAN_BASE_URL"
-require_var "MARZBAN_USERNAME" "$MARZBAN_USERNAME"
-require_var "MARZBAN_PASSWORD" "$MARZBAN_PASSWORD"
-require_var "YOOMONEY_WALLET_ID" "$YOOMONEY_WALLET_ID"
-require_var "YOOMONEY_NOTIFICATION_SECRET" "$YOOMONEY_NOTIFICATION_SECRET"
-require_var "INSTRUCTION_URL" "$INSTRUCTION_URL"
-require_var "SUPPORT_URL" "$SUPPORT_URL"
+set -a
+source .env
+set +a
 
-cat > .env <<EOF
-BOT_TOKEN=$BOT_TOKEN
-MARZBAN_BASE_URL=$MARZBAN_BASE_URL
-MARZBAN_USERNAME=$MARZBAN_USERNAME
-MARZBAN_PASSWORD=$MARZBAN_PASSWORD
-YOOMONEY_WALLET_ID=$YOOMONEY_WALLET_ID
-YOOMONEY_NOTIFICATION_SECRET=$YOOMONEY_NOTIFICATION_SECRET
-INSTRUCTION_URL=$INSTRUCTION_URL
-SUPPORT_URL=$SUPPORT_URL
-BOT_USERNAME=$BOT_USERNAME
-NEWS_URL=$NEWS_URL
-ADMIN_IDS=$ADMIN_IDS
-EOF
-chmod 600 .env
+require_var "BOT_TOKEN" "${BOT_TOKEN:-}"
+require_var "MARZBAN_BASE_URL" "${MARZBAN_BASE_URL:-}"
+require_var "MARZBAN_USERNAME" "${MARZBAN_USERNAME:-}"
+require_var "MARZBAN_PASSWORD" "${MARZBAN_PASSWORD:-}"
+require_var "YOOMONEY_WALLET_ID" "${YOOMONEY_WALLET_ID:-}"
+require_var "YOOMONEY_NOTIFICATION_SECRET" "${YOOMONEY_NOTIFICATION_SECRET:-}"
+require_var "INSTRUCTION_URL" "${INSTRUCTION_URL:-}"
+require_var "SUPPORT_URL" "${SUPPORT_URL:-}"
 
 # 3) Виртуальное окружение и зависимости (код должен быть уже в /opt/averra-bot)
 python3 -m venv .venv
