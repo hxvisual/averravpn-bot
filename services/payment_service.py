@@ -4,6 +4,7 @@ import hmac
 from typing import Dict, Any
 from urllib.parse import urlencode
 import logging
+from decimal import Decimal, InvalidOperation
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,44 @@ class PaymentService:
         except Exception as e:
             logger.error(f"Payment verification error: {e}")
             return False
+
+    def verify_amount(self, data: Dict[str, Any], expected_amount: float, expected_currency: str = "643") -> bool:
+        """Проверить, что сумма и валюта соответствуют тарифу.
+
+        YooMoney всегда отправляет сумму как строку, поэтому приводим её к Decimal с точностью 2 знака.
+        expected_currency по умолчанию 643 (RUB).
+        """
+        try:
+            raw_amount = data.get("amount")
+            if raw_amount is None:
+                logger.warning("Payment amount missing in notification: label=%s", data.get("label"))
+                return False
+            amount = Decimal(str(raw_amount)).quantize(Decimal("0.01"))
+            expected = Decimal(str(expected_amount)).quantize(Decimal("0.01"))
+        except (InvalidOperation, TypeError) as exc:
+            logger.warning("Failed to parse payment amount '%s': %s", data.get("amount"), exc)
+            return False
+
+        if amount != expected:
+            logger.warning(
+                "Payment amount mismatch: expected=%s received=%s label=%s",
+                expected,
+                amount,
+                data.get("label")
+            )
+            return False
+
+        currency = (data.get("currency") or "").strip()
+        if expected_currency and currency and currency != expected_currency:
+            logger.warning(
+                "Payment currency mismatch: expected=%s received=%s label=%s",
+                expected_currency,
+                currency,
+                data.get("label")
+            )
+            return False
+
+        return True
 
     def parse_payment_data(self, label: str) -> Dict[str, Any]:
         """Разобрать данные платежа из label.

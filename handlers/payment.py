@@ -87,6 +87,15 @@ async def process_payment_notification(data: dict, bot: Bot | None = None):
         return False
     
     plan = SUBSCRIPTION_PLANS[plan_key]
+
+    if not payment_service.verify_amount(data, plan.get("price")):
+        logger.warning(
+            "Rejecting payment for user %s: invalid amount %s for plan %s",
+            telegram_id,
+            data.get("amount"),
+            plan_key,
+        )
+        return False
     
     try:
         # Проверяем, есть ли уже пользователь
