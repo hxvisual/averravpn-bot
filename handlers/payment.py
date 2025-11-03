@@ -1,6 +1,7 @@
 import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from decimal import Decimal, InvalidOperation
 from services.marzban_service import MarzbanService
 from services.payment_service import PaymentService
 from aiogram import Bot
@@ -88,12 +89,25 @@ async def process_payment_notification(data: dict, bot: Bot | None = None):
     
     plan = SUBSCRIPTION_PLANS[plan_key]
 
-    if not payment_service.verify_amount(data, plan.get("price")):
+    paid_amount_raw = data.get("amount")
+    if paid_amount_raw is None:
+        logger.warning("Payment rejected: missing amount for label %s", data.get("label"))
+        return False
+
+    try:
+        paid_amount = Decimal(str(paid_amount_raw))
+        expected_amount = Decimal(str(plan.get("price")))
+    except (InvalidOperation, TypeError):
+        logger.warning("Payment rejected: invalid amount %s for label %s", paid_amount_raw, data.get("label"))
+        return False
+
+    if paid_amount != expected_amount:
         logger.warning(
-            "Rejecting payment for user %s: invalid amount %s for plan %s",
+            "Payment rejected: amount mismatch for user %s plan %s (paid=%s expected=%s)",
             telegram_id,
-            data.get("amount"),
             plan_key,
+            paid_amount,
+            expected_amount,
         )
         return False
     
