@@ -1,5 +1,7 @@
 import os
 from typing import Dict
+from urllib.parse import urlparse
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env if present
@@ -26,6 +28,26 @@ SUPPORT_URL = os.getenv('SUPPORT_URL')
  
 # Новостной канал (URL)
 NEWS_URL = os.getenv('NEWS_URL')
+_news_username_env = os.getenv('NEWS_CHANNEL_USERNAME', '').strip()
+NEWS_CHANNEL_USERNAME = _news_username_env.lstrip('@').lower() if _news_username_env else None
+if not NEWS_CHANNEL_USERNAME and NEWS_URL:
+    try:
+        parsed = urlparse(NEWS_URL)
+        candidate = (parsed.path or '').strip('/')
+        if candidate:
+            candidate = candidate.split('/')[-1]
+        if candidate:
+            NEWS_CHANNEL_USERNAME = candidate.lstrip('@').lower()
+    except Exception:
+        NEWS_CHANNEL_USERNAME = None
+
+_news_channel_id_raw = os.getenv('NEWS_CHANNEL_ID', '').strip()
+NEWS_CHANNEL_ID: int | None = None
+if _news_channel_id_raw:
+    try:
+        NEWS_CHANNEL_ID = int(_news_channel_id_raw)
+    except ValueError:
+        NEWS_CHANNEL_ID = None
 
 # Пользовательское соглашение
 USER_AGREEMENT_URL = os.getenv('USER_AGREEMENT_URL')
