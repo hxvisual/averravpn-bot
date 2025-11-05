@@ -1,8 +1,27 @@
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 
 NOTE_KNOWN_KEYS = {"ref", "username"}
+
+
+def split_note_segments(note: Optional[str]) -> List[str]:
+    segments: List[str] = []
+    if not note:
+        return segments
+    try:
+        raw = str(note)
+        for line in raw.splitlines():
+            if not line:
+                continue
+            parts = line.split("|")
+            for part in parts:
+                part_str = part.strip()
+                if part_str:
+                    segments.append(part_str)
+    except Exception:
+        return segments
+    return segments
 
 
 def _normalize_username(username: Optional[str]) -> Optional[str]:
@@ -20,21 +39,16 @@ def parse_note_components(note: Optional[str]) -> tuple[Dict[str, str], list[str
     """Split note string into known key-value pairs and leftover lines."""
     fields: Dict[str, str] = {}
     extras: list[str] = []
-    if not note:
-        return fields, extras
-    try:
-        lines = [line.strip() for line in str(note).splitlines() if line and line.strip()]
-    except Exception:
-        return fields, extras
-    for line in lines:
-        if ":" in line:
-            key, value = line.split(":", 1)
+    segments = split_note_segments(note)
+    for segment in segments:
+        if ":" in segment:
+            key, value = segment.split(":", 1)
             key_lower = key.strip().lower()
             value_str = value.strip()
             if key_lower in NOTE_KNOWN_KEYS:
                 fields[key_lower] = value_str
                 continue
-        extras.append(line)
+        extras.append(segment)
     return fields, extras
 
 

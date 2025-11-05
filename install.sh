@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Параметры
-DOMAIN="bot.hexsad.ru"
+DOMAIN="vpn.hexsad.ru"
 EMAIL="dimatarasov825@gmail.com"   # укажите реальную почту; иначе будет использован --register-unsafely-without-email
 
 # 0) Переменные окружения приложения (берутся из заранее подготовленного .env)

@@ -13,7 +13,12 @@ from config import (
     MARZBAN_USERNAME,
     MARZBAN_PASSWORD,
 )
-from utils.helpers import format_ts_to_str
+from utils.helpers import (
+    format_ts_to_str,
+    parse_note_components,
+    assemble_note_components,
+    split_note_segments,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -24,24 +29,20 @@ def _today_tag() -> str:
 
 
 def _merge_note_with_notify_tag(existing: Optional[str], tag: str) -> str:
-    """Merge existing note (may contain ref:...) with notify tag nd:<YYYYMMDD>.
-
-    Preserves referral note prefix if present, uses '|' as separator.
-    """
-    base = (existing or "").strip()
-    parts = [p for p in base.split("|") if p]
-    # Remove previous nd:*
-    parts = [p for p in parts if not p.startswith("nd:")]
-    parts.append(f"nd:{tag}")
-    return "|".join(parts) if parts else f"nd:{tag}"
+    """Merge existing note with notify tag nd:<YYYYMMDD>, preserving data."""
+    fields, extras = parse_note_components(existing)
+    normalized_extras = [e for e in extras if not e.lower().startswith("nd:")]
+    normalized_extras.append(f"nd:{tag}")
+    merged = assemble_note_components(fields, normalized_extras)
+    if merged:
+        return merged
+    return f"nd:{tag}"
 
 
 def _already_notified_today(note: Optional[str]) -> bool:
     try:
-        base = (note or "").strip()
-        parts = [p for p in base.split("|") if p]
-        for p in parts:
-            if p.startswith("nd:") and p.removeprefix("nd:") == _today_tag():
+        for segment in split_note_segments(note):
+            if segment.lower().startswith("nd:") and segment.removeprefix("nd:") == _today_tag():
                 return True
         return False
     except Exception:
