@@ -14,6 +14,22 @@ router = Router()
 marzban_service = MarzbanService(MARZBAN_BASE_URL, MARZBAN_USERNAME, MARZBAN_PASSWORD)
 
 
+async def _build_plans_intro_text() -> str:
+    try:
+        locations = await marzban_service.get_inbound_locations()
+    except Exception:
+        locations = []
+    if locations:
+        countries_text = "\n".join(locations)
+    else:
+        countries_text = "—"
+    template = MESSAGES.get("no_subscription", "{countries}")
+    try:
+        return template.format(countries=countries_text)
+    except Exception:
+        return f"{template}\n{countries_text}" if countries_text else template
+
+
 @router.callback_query(F.data == "my_subscription")
 async def my_subscription_handler(callback: CallbackQuery):
     """Показать информацию о подписке"""
@@ -26,7 +42,7 @@ async def my_subscription_handler(callback: CallbackQuery):
     if not user_info:
         # Пользователь ещё ни разу не оформлял подписку
         await callback.message.edit_text(
-            text=MESSAGES["no_subscription"],
+            text=await _build_plans_intro_text(),
             reply_markup=get_plans_menu()
         )
     elif not is_active:
@@ -62,7 +78,7 @@ async def my_subscription_handler(callback: CallbackQuery):
 async def show_plans(callback: CallbackQuery):
     """Показать тарифные планы"""
     await callback.message.edit_text(
-        text=MESSAGES["no_subscription"],
+        text=await _build_plans_intro_text(),
         reply_markup=get_plans_menu()
     )
     await callback.answer()

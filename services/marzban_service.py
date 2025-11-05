@@ -199,6 +199,75 @@ class MarzbanService:
             logger.error(f"Failed to count referrals for {referrer_id}: {e}")
             return 0
 
+    async def get_inbound_locations(self) -> list[str]:
+        """Получить список локаций (по remark/tag) из inbounds/hosts."""
+        try:
+            token = await self.get_token()
+        except Exception as e:
+            logger.error(f"Failed to get token for inbound locations: {e}")
+            return []
+
+        seen: set[str] = set()
+        locations: list[str] = []
+
+        try:
+            raw_hosts = await self.api.get_hosts(token=token)
+        except Exception as e:
+            logger.error(f"Failed to fetch hosts: {e}")
+            raw_hosts = None
+
+        if raw_hosts:
+            for items in raw_hosts.values():
+                if not isinstance(items, list):
+                    continue
+                for host in items:
+                    if isinstance(host, dict):
+                        candidate = host.get("remark") or host.get("address") or host.get("host")
+                    else:
+                        candidate = (
+                            getattr(host, "remark", None)
+                            or getattr(host, "address", None)
+                            or getattr(host, "host", None)
+                        )
+                    if not isinstance(candidate, str):
+                        continue
+                    text = candidate.strip()
+                    if not text:
+                        continue
+                    norm = text.lower()
+                    if norm in seen:
+                        continue
+                    seen.add(norm)
+                    locations.append(text)
+
+        try:
+            raw_inbounds = await self.api.get_inbounds(token=token)
+        except Exception as e:
+            logger.error(f"Failed to fetch inbounds: {e}")
+            raw_inbounds = None
+
+        if raw_inbounds:
+            for items in raw_inbounds.values():
+                if not isinstance(items, list):
+                    continue
+                for item in items:
+                    if isinstance(item, dict):
+                        candidate = item.get("remark")
+                    else:
+                        candidate = getattr(item, "remark", None)
+                    if not isinstance(candidate, str):
+                        continue
+                    text = candidate.strip()
+                    if not text:
+                        continue
+                    norm = text.lower()
+                    if norm in seen:
+                        continue
+                    seen.add(norm)
+                    locations.append(text)
+
+        return locations
+
     async def close(self):
         """Закрытие API клиента"""
         await self.api.close()
