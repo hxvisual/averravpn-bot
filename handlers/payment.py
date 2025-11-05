@@ -18,6 +18,7 @@ from config import (
     REFERRAL,
 )
 from utils.maintenance import is_maintenance_enabled
+from utils.helpers import extract_referrer_id
 from config import ADMIN_IDS, ADMIN_IDS_STR
 
 router = Router()
@@ -176,27 +177,24 @@ async def process_payment_notification(data: dict, bot: Bot | None = None):
         # Реферальный бонус: если у платящего пользователя есть реферер (в note), начисляем 30% от купленных дней
         try:
             user_info_after = await marzban_service.get_user_info(telegram_id)
-            note = (user_info_after or {}).get("note") or ""
-            ref_prefix = REFERRAL.get("note_prefix", "ref:")
-            if isinstance(note, str) and note.startswith(ref_prefix):
-                ref_id_str = note.removeprefix(ref_prefix)
-                if ref_id_str.isdigit():
-                    referrer_id = int(ref_id_str)
-                    purchased_days = int(plan.get("days", 0))
-                    bonus_days = max(1, (purchased_days * 3) // 10)
-                    bonus_res = await marzban_service.extend_by_days(referrer_id, bonus_days)
-                    if bot is not None:
-                        try:
-                            from utils.helpers import format_ts_to_str
-                            expire_str = "—"
-                            exp_ts = bonus_res.get("expire")
-                            if exp_ts:
-                                expire_str = format_ts_to_str(exp_ts)
-                            bonus_title = MESSAGES["ref_bonus_title"]
-                            bonus_body = MESSAGES["ref_bonus_body"].format(bonus_days=bonus_days, expire_str=expire_str)
-                            await bot.send_message(chat_id=referrer_id, text=f"{bonus_title}\n\n{bonus_body}")
-                        except Exception as ref_notify_err:
-                            logger.error("Failed to notify referrer %s: %s", referrer_id, ref_notify_err)
+            note = (user_info_after or {}).get("note")
+            referrer_id = extract_referrer_id(note)
+            if referrer_id is not None:
+                purchased_days = int(plan.get("days", 0))
+                bonus_days = max(1, (purchased_days * 3) // 10)
+                bonus_res = await marzban_service.extend_by_days(referrer_id, bonus_days)
+                if bot is not None:
+                    try:
+                        from utils.helpers import format_ts_to_str
+                        expire_str = "—"
+                        exp_ts = bonus_res.get("expire")
+                        if exp_ts:
+                            expire_str = format_ts_to_str(exp_ts)
+                        bonus_title = MESSAGES["ref_bonus_title"]
+                        bonus_body = MESSAGES["ref_bonus_body"].format(bonus_days=bonus_days, expire_str=expire_str)
+                        await bot.send_message(chat_id=referrer_id, text=f"{bonus_title}\n\n{bonus_body}")
+                    except Exception as ref_notify_err:
+                        logger.error("Failed to notify referrer %s: %s", referrer_id, ref_notify_err)
         except Exception as ref_err:
             logger.error("Referral bonus error for payer %s: %s", telegram_id, ref_err)
         return True

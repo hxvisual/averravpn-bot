@@ -7,7 +7,7 @@ from aiogram.fsm.state import StatesGroup, State
 from keyboards.inline import get_main_menu
 from config import MESSAGES, MARZBAN_BASE_URL, MARZBAN_USERNAME, MARZBAN_PASSWORD, REFERRAL, BOT_USERNAME, BUTTONS, ADMIN_IDS
 from services.marzban_service import MarzbanService
-from utils.helpers import is_subscription_active
+from utils.helpers import is_subscription_active, build_user_note, update_note_with_username
 from utils.promo import consume_promo
 
 router = Router()
@@ -30,13 +30,21 @@ def _is_cancel(message: Message) -> bool:
     return message.text.strip().lower() in {"отмена", "cancel"}
 
 
+def _build_ref_link(user_id: int) -> str:
+    param = REFERRAL.get("param", "ref")
+    bot_username = BOT_USERNAME or "your_bot_username"
+    return f"https://t.me/{bot_username}?start={param}_{user_id}"
+
+
 @router.message(CommandStart())
 async def start_handler(message: Message):
     """Обработчик команды /start"""
     # Определим текущий статус пользователя
+    telegram_id = message.from_user.id
+    raw_username = getattr(message.from_user, "username", None)
     created_trial = False
     try:
-        user_info = await marzban_service.get_user_info(message.from_user.id)
+        user_info = await marzban_service.get_user_info(telegram_id)
     except Exception:
         user_info = None
 
@@ -59,10 +67,8 @@ async def start_handler(message: Message):
 
         try:
             trial_plan = {"name": "trial", "days": 3, "price": 0}
-            note = None
-            if referrer_id:
-                note = f"{REFERRAL['note_prefix']}{referrer_id}"
-            result = await marzban_service.create_user(message.from_user.id, trial_plan, note=note)
+            note = build_user_note(referrer_id, raw_username)
+            result = await marzban_service.create_user(telegram_id, trial_plan, note=note)
             created_trial = True
             # Сообщение об активации пробного периода
             try:
@@ -77,7 +83,7 @@ async def start_handler(message: Message):
             )
             await message.answer(trial_text)
             # Обновим user_info для дальнейшей персонализации меню
-            user_info = await marzban_service.get_user_info(message.from_user.id)
+            user_info = await marzban_service.get_user_info(telegram_id)
         except Exception:
             # Если не удалось создать пробный — продолжим без него
             created_trial = False
@@ -109,12 +115,7 @@ async def back_to_main(callback: CallbackQuery):
 @router.callback_query(F.data == "ref_info")
 async def show_ref_info(callback: CallbackQuery):
     """Показать информацию о реферальной программе и персональную ссылку"""
-    try:
-        ref_payload = f"{REFERRAL['param']}_{callback.from_user.id}"
-        bot_username = BOT_USERNAME or 'your_bot_username'
-        ref_link = f"https://t.me/{bot_username}?start={ref_payload}"
-    except Exception:
-        ref_link = f"https://t.me/{BOT_USERNAME or 'your_bot_username'}?start={REFERRAL['param']}_{callback.from_user.id}"
+    ref_link = _build_ref_link(callback.from_user.id)
 
     # Считаем рефералов
     try:
@@ -129,10 +130,23 @@ async def show_ref_info(callback: CallbackQuery):
     # Добавим кнопку Назад
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=BUTTONS["share_referral"], callback_data="ref_share")],
         [InlineKeyboardButton(text=BUTTONS["back"], callback_data="back_to_main")]
     ])
     await callback.message.edit_text(text=text, reply_markup=kb)
     await callback.answer()
+
+
+@router.callback_query(F.data == "ref_share")
+async def share_ref_message(callback: CallbackQuery):
+    """Отправить пользователю заготовку сообщения для друга."""
+    ref_link = _build_ref_link(callback.from_user.id)
+    percent = REFERRAL.get("bonus_percent", 30)
+    share_template = MESSAGES.get("ref_share_text")
+    if share_template:
+        text = share_template.format(ref_link=ref_link, percent=percent)
+        await callback.message.answer(text)
+    await callback.answer("Сообщение готово!")
 
 
 @router.callback_query(F.data == "admin_panel")
@@ -147,6 +161,7 @@ async def admin_panel(callback: CallbackQuery):
         [InlineKeyboardButton(text=toggle_text, callback_data="maintenance_toggle")],
         [InlineKeyboardButton(text=BUTTONS["backup"], callback_data="run_backup")],
         [InlineKeyboardButton(text=BUTTONS["create_promo"], callback_data="promo_create")],
+        [InlineKeyboardButton(text=BUTTONS["sync_usernames"], callback_data="sync_usernames")],
         [InlineKeyboardButton(text=BUTTONS["broadcast"], callback_data="broadcast_menu")],
         [InlineKeyboardButton(text=BUTTONS["back"], callback_data="back_to_main")],
     ])
@@ -169,11 +184,99 @@ async def toggle_maintenance(callback: CallbackQuery):
         [InlineKeyboardButton(text=toggle_text, callback_data="maintenance_toggle")],
         [InlineKeyboardButton(text=BUTTONS["backup"], callback_data="run_backup")],
         [InlineKeyboardButton(text=BUTTONS["create_promo"], callback_data="promo_create")],
+        [InlineKeyboardButton(text=BUTTONS["sync_usernames"], callback_data="sync_usernames")],
         [InlineKeyboardButton(text=BUTTONS["broadcast"], callback_data="broadcast_menu")],
         [InlineKeyboardButton(text=BUTTONS["back"], callback_data="back_to_main")],
     ])
     await callback.message.edit_text(text=MESSAGES["admin_panel"], reply_markup=kb)
     await callback.answer(MESSAGES["maintenance_enabled"] if enable else MESSAGES["maintenance_disabled"])
+
+
+@router.callback_query(F.data == "sync_usernames")
+async def sync_usernames(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+
+    start_text = MESSAGES.get("sync_usernames_started") or "🔄 Начинаю синхронизацию юзернеймов..."
+    await callback.answer(start_text)
+    status_message = await callback.message.answer(start_text)
+
+    try:
+        users = await marzban_service.list_all_users()
+    except Exception:
+        await status_message.edit_text(MESSAGES.get("sync_usernames_error", "❌ Не удалось выполнить синхронизацию."))
+        return
+
+    candidates: list[tuple[int, dict]] = []
+    for user in users or []:
+        try:
+            username_field = str(user.get("username") or "").strip()
+            if not username_field.startswith("tg_"):
+                continue
+            tg_id_str = username_field.removeprefix("tg_")
+            if not tg_id_str.isdigit():
+                continue
+            candidates.append((int(tg_id_str), user))
+        except Exception:
+            continue
+
+    if not candidates:
+        await status_message.edit_text(MESSAGES.get("sync_usernames_no_users", "⚠️ Пользователи не найдены."))
+        return
+
+    total = len(candidates)
+    updated = 0
+    unchanged = 0
+    missing_username = 0
+    errors = 0
+
+    for tg_id, user in candidates:
+        try:
+            chat = await callback.bot.get_chat(tg_id)
+            actual_username = getattr(chat, "username", None)
+            if not actual_username:
+                missing_username += 1
+
+            new_note = update_note_with_username(user.get("note"), actual_username)
+            current_note = user.get("note")
+            if new_note == current_note:
+                unchanged += 1
+            else:
+                try:
+                    success = await marzban_service.set_user_note(tg_id, new_note)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    success = False
+
+                if success:
+                    updated += 1
+                else:
+                    errors += 1
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            errors += 1
+        finally:
+            await asyncio.sleep(0.03)
+
+    summary_template = MESSAGES.get("sync_usernames_done")
+    if summary_template:
+        summary_text = summary_template.format(
+            total=total,
+            updated=updated,
+            unchanged=unchanged,
+            missing=missing_username,
+            errors=errors,
+        )
+    else:
+        summary_text = (
+            f"Синхронизация завершена. Всего: {total}, обновлено: {updated}, "
+            f"без изменений: {unchanged}, без username: {missing_username}, ошибок: {errors}."
+        )
+
+    await status_message.edit_text(summary_text)
 
 
 @router.callback_query(F.data == "broadcast_menu")

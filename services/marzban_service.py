@@ -5,6 +5,8 @@ from typing import Optional, Dict, Any
 from marzban import MarzbanAPI
 from marzban.models import UserCreate, UserModify, ProxySettings
 
+from utils.helpers import extract_referrer_id
+
 logger = logging.getLogger(__name__)
 
 
@@ -177,7 +179,6 @@ class MarzbanService:
             offset = 0
             limit = 200
             total_count = 0
-            prefix = f"ref:{referrer_id}"
             while True:
                 resp = await self.api.get_users(token=token, offset=offset, limit=limit)
                 users = getattr(resp, "users", [])
@@ -185,7 +186,8 @@ class MarzbanService:
                     break
                 for u in users:
                     try:
-                        if getattr(u, "note", "") and str(u.note).startswith(prefix):
+                        ref_id = extract_referrer_id(getattr(u, "note", ""))
+                        if ref_id == referrer_id:
                             total_count += 1
                     except Exception:
                         continue
