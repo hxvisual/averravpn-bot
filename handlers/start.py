@@ -160,6 +160,7 @@ async def admin_panel(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=toggle_text, callback_data="maintenance_toggle")],
         [InlineKeyboardButton(text=BUTTONS["backup"], callback_data="run_backup")],
+        [InlineKeyboardButton(text=BUTTONS["manage_users"], callback_data="manage_users")],
         [InlineKeyboardButton(text=BUTTONS["create_promo"], callback_data="promo_create")],
         [InlineKeyboardButton(text=BUTTONS["sync_usernames"], callback_data="sync_usernames")],
         [InlineKeyboardButton(text=BUTTONS["broadcast"], callback_data="broadcast_menu")],
@@ -183,6 +184,7 @@ async def toggle_maintenance(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=toggle_text, callback_data="maintenance_toggle")],
         [InlineKeyboardButton(text=BUTTONS["backup"], callback_data="run_backup")],
+        [InlineKeyboardButton(text=BUTTONS["manage_users"], callback_data="manage_users")],
         [InlineKeyboardButton(text=BUTTONS["create_promo"], callback_data="promo_create")],
         [InlineKeyboardButton(text=BUTTONS["sync_usernames"], callback_data="sync_usernames")],
         [InlineKeyboardButton(text=BUTTONS["broadcast"], callback_data="broadcast_menu")],

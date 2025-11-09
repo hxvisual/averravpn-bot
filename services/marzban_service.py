@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
+import httpx
 from marzban import MarzbanAPI
 from marzban.models import UserCreate, UserModify, ProxySettings
 
@@ -169,6 +170,53 @@ class MarzbanService:
             return True
         except Exception as e:
             logger.error(f"Failed to set note for {telegram_id}: {e}")
+            return False
+
+    async def expire_user(self, telegram_id: int) -> bool:
+        """Перевести пользователя в статус expired и завершить подписку."""
+        username = f"tg_{telegram_id}"
+        try:
+            token = await self.get_token()
+            try:
+                await self.api.revoke_user_subscription(username=username, token=token)
+            except httpx.HTTPStatusError as revoke_err:
+                detail = ""
+                if revoke_err.response is not None:
+                    try:
+                        detail = revoke_err.response.text
+                    except Exception:
+                        detail = str(revoke_err)
+                logger.warning(
+                    "Failed to revoke subscription for %s: %s | %s",
+                    telegram_id,
+                    revoke_err,
+                    detail,
+                )
+
+            now_ts = int(datetime.now().timestamp()) - 30
+            user_modify = UserModify(expire=now_ts)
+            await self.api.modify_user(
+                username=username,
+                user=user_modify,
+                token=token,
+            )
+            return True
+        except httpx.HTTPStatusError as e:
+            detail = ""
+            if e.response is not None:
+                try:
+                    detail = e.response.text
+                except Exception:
+                    detail = str(e)
+            logger.error(
+                "Failed to set expire for %s: %s | %s",
+                telegram_id,
+                e,
+                detail,
+            )
+            return False
+        except Exception as e:
+            logger.error(f"Failed to expire user {telegram_id}: {e}")
             return False
 
     async def count_referrals_for(self, referrer_id: int) -> int:

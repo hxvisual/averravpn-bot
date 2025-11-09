@@ -8,7 +8,7 @@ from aiogram.enums import ParseMode
 from config import BOT_TOKEN, WEBHOOK_HOST, WEBHOOK_PORT
 from utils.reminder import run_expiry_reminders
 from utils.maintenance import MaintenanceMiddleware
-from handlers import start, subscription, payment, news
+from handlers import start, subscription, payment, news, admin_users
 from webhook import create_app
 import uvicorn
 
@@ -28,6 +28,7 @@ async def run_bot(bot: Bot) -> None:
     dp.include_router(subscription.router)
     dp.include_router(payment.router)
     dp.include_router(news.router)
+    dp.include_router(admin_users.router)
 
     logger.info("Starting Averra VPN Bot...")
     await dp.start_polling(bot)
