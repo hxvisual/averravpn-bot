@@ -60,12 +60,26 @@ async def my_subscription_handler(callback: CallbackQuery):
         total_gb = "∞" if not user_info.get("data_limit") else f"{bytes_to_gigabytes(user_info['data_limit'])} ГБ"
         display_username = get_display_username(user_info.get("username"))
 
+        subscription_url = user_info.get("subscription_url", "")
+        subscription_url_plain = user_info.get("subscription_url_plain")
+        if (
+            subscription_url
+            and subscription_url_plain
+            and subscription_url != subscription_url_plain
+        ):
+            subscription_label = "Зашифрованная ссылка"
+        else:
+            subscription_label = "Ссылка для подключения"
+
+        link_to_show = subscription_url or "—"
+
         text = MESSAGES["subscription_active"].format(
             display_username=display_username,
             expire_date=expire_date,
             used_gb=used_gb,
             total_gb=total_gb,
-            subscription_url=user_info.get("subscription_url", "")
+            subscription_url=link_to_show,
+            subscription_label=subscription_label,
         )
 
         kb = get_subscription_menu(has_subscription=True)

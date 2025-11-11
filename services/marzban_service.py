@@ -6,6 +6,7 @@ import httpx
 from marzban import MarzbanAPI
 from marzban.models import UserCreate, UserModify, ProxySettings
 
+from utils.crypto_link import encrypt_subscription_url
 from utils.helpers import extract_referrer_id
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,24 @@ class MarzbanService:
         self.api = MarzbanAPI(base_url=base_url)
         self.token: Optional[str] = None
         self.token_expires: Optional[datetime] = None
+        self._encrypted_cache: dict[str, str] = {}
+
+    async def _encrypt_subscription_url(
+        self, url: Optional[str]
+    ) -> tuple[Optional[str], Optional[str]]:
+        if not url:
+            return None, None
+
+        cached = self._encrypted_cache.get(url)
+        if cached:
+            return cached, url
+
+        encrypted = await encrypt_subscription_url(url)
+        if not encrypted:
+            encrypted = url
+
+        self._encrypted_cache[url] = encrypted
+        return encrypted, url
         
     async def get_token(self) -> str:
         """Получение и обновление токена"""
@@ -44,13 +63,17 @@ class MarzbanService:
             username = f"tg_{telegram_id}"
             
             user_info = await self.api.get_user(username=username, token=token)
+            encrypted_url, plain_url = await self._encrypt_subscription_url(
+                user_info.subscription_url
+            )
             return {
                 "username": user_info.username,
                 "status": user_info.status,
                 "expire": user_info.expire,
                 "data_limit": user_info.data_limit,
                 "used_traffic": user_info.used_traffic,
-                "subscription_url": user_info.subscription_url,
+                "subscription_url": encrypted_url,
+                "subscription_url_plain": plain_url,
                 "note": getattr(user_info, "note", None),
             }
         except Exception as e:
@@ -80,10 +103,14 @@ class MarzbanService:
             )
             
             created_user = await self.api.add_user(user=new_user, token=token)
+            encrypted_url, plain_url = await self._encrypt_subscription_url(
+                created_user.subscription_url
+            )
             
             return {
                 "username": created_user.username,
-                "subscription_url": created_user.subscription_url,
+                "subscription_url": encrypted_url,
+                "subscription_url_plain": plain_url,
                 "expire": created_user.expire
             }
         except Exception as e:
@@ -117,10 +144,14 @@ class MarzbanService:
                 user=user_modify, 
                 token=token
             )
+            encrypted_url, plain_url = await self._encrypt_subscription_url(
+                modified_user.subscription_url
+            )
             
             return {
                 "username": modified_user.username,
-                "subscription_url": modified_user.subscription_url,
+                "subscription_url": encrypted_url,
+                "subscription_url_plain": plain_url,
                 "expire": modified_user.expire
             }
         except Exception as e:
@@ -150,10 +181,14 @@ class MarzbanService:
                 user=user_modify,
                 token=token,
             )
+            encrypted_url, plain_url = await self._encrypt_subscription_url(
+                modified_user.subscription_url
+            )
 
             return {
                 "username": modified_user.username,
-                "subscription_url": modified_user.subscription_url,
+                "subscription_url": encrypted_url,
+                "subscription_url_plain": plain_url,
                 "expire": modified_user.expire,
             }
         except Exception as e:
@@ -344,6 +379,7 @@ class MarzbanService:
                             "data_limit": getattr(u, "data_limit", None),
                             "used_traffic": getattr(u, "used_traffic", None),
                             "subscription_url": getattr(u, "subscription_url", None),
+                            "subscription_url_plain": getattr(u, "subscription_url", None),
                             "note": getattr(u, "note", None),
                         })
                     except Exception:

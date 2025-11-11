@@ -277,6 +277,7 @@ async def _build_user_detail(
     note = info.get("note")
     note_username = extract_username(note)
     subscription_url = info.get("subscription_url")
+    subscription_url_plain = info.get("subscription_url_plain")
 
     lines = [
         f"👤 <b>Пользователь</b> <code>{telegram_id}</code>",
@@ -292,8 +293,17 @@ async def _build_user_detail(
         lines.append("Заметка:")
         lines.append(f"<code>{html.escape(str(note))}</code>")
     if subscription_url:
-        lines.append("Ссылка для подключения:")
+        if subscription_url_plain and subscription_url != subscription_url_plain:
+            lines.append("Зашифрованная ссылка:")
+        else:
+            lines.append("Ссылка для подключения:")
         lines.append(f"<code>{html.escape(str(subscription_url))}</code>")
+    if (
+        subscription_url_plain
+        and subscription_url_plain != subscription_url
+    ):
+        lines.append("Оригинальная ссылка:")
+        lines.append(f"<code>{html.escape(str(subscription_url_plain))}</code>")
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
