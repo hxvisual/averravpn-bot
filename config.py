@@ -90,20 +90,20 @@ except ValueError:
 # Подписки и цены
 SUBSCRIPTION_PLANS: Dict[str, Dict] = {
     "1_month": {
-        "name": "1 месяц [-20%]",
+        "name": "1 месяц",
         "days": 30,
-        "price": 199,
+        "price": 249,
     },
     "3_months": {
-        "name": "3 месяца [-20%]",
+        "name": "3 месяца",
         "days": 90,
-        "price": 499,
+        "price": 549,
         
     },
     "6_months": {
-        "name": "6 месяцев [-20%]",
+        "name": "6 месяцев",
         "days": 180,
-        "price": 899,
+        "price": 1099,
         
     }
 }
